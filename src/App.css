@@ -13,6 +13,14 @@
   }
 }
 
+.CanvasMainBackground {
+  background-color: white;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+  top:0px;
+}
+
 .App-header {
   background-color: #282c34;
   min-height: 100vh;
