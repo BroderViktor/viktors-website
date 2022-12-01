@@ -3,8 +3,17 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import Navbar from "../components/navbar";
 import * as THREE from 'three'
 
-const particlesNum = 11;
+const particlesNum = 100;
 const speed = 1;
+
+class particle {
+    constructor(position, velocity, targetPos, active) {
+        this.position = position;
+        this.velocity = velocity;
+        this.targetPos = targetPos;
+        this.active = active;
+    }
+}
 
 function PointManger() {
     const {viewport} = useThree();
@@ -18,32 +27,31 @@ function PointManger() {
         setMoveToWanted(true)
     }
 
-    const {positions, velocitys} = useMemo(() => {
-        console.log("generated positions!");
-        let positions = new Array(particlesNum);
-        let velocitys = new Array(particlesNum);
-        for (let i = 0; i < positions.length; i++) {
-
-            positions[i] = new THREE.Vector3((Math.random() - 0.5) * viewport.width, (Math.random() - 0.5) * viewport.height, 0)
-            velocitys[i] = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, 0)
+    const {particles } = useMemo(() => {
+        let particles = new Array(particlesNum);
+        for (let i = 0; i < particles.length; i++) {
+            let pos = new THREE.Vector3((Math.random() - 0.5) * viewport.width, (Math.random() - 0.5) * viewport.height, 0)
+            let vel = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
+            let target = new THREE.Vector3(0)
+            particles[i] = new particle(pos, vel, target, false)
         }
-        return {positions, velocitys}; 
+        return {particles}; 
     }, [])
     
     useFrame(() => {
         //if (moveToWanted) console.log(wantedPositions);
-        for (let i = 0; i < positions.length; i++) {
-            if (moveToWanted && i < wantedPositions.length / 3) {
+        for (let i = 0; i < particles.length; i++) {
+            if (particles[i].active) {
                 let size = 20;
-                positions[i].set(wantedPositions[3 * i] * size, wantedPositions[3 * i + 1] * size, wantedPositions[3 * i + 2] * size);
+                //particles[i].velocity.set(wantedPositions[3 * i] * size, wantedPositions[3 * i + 1] * size, wantedPositions[3 * i + 2] * size);
             }
             else {
-                positions[i].add(velocitys[i]);
-                if (positions[i].x < -0.5 * viewport.width || positions[i].x > 0.5 * viewport.width) velocitys[i].setX(-1 * velocitys[i].x)
-                if (positions[i].y < -0.5 * viewport.height || positions[i].y > 0.5 * viewport.height) velocitys[i].setY(-1 * velocitys[i].y)
+                particles[i].position.add(particles[i].velocity);
+                if (particles[i].position.x < -0.5 * viewport.width || particles[i].position.x > 0.5 * viewport.width) particles[i].velocity.setX(-1 * particles[i].velocity.x)
+                if (particles[i].position.y < -0.5 * viewport.height || particles[i].position.y > 0.5 * viewport.height) particles[i].velocity.setY(-1 * particles[i].velocity.y)
             }
             let transform = new THREE.Matrix4()
-            transform.setPosition(positions[i])
+            transform.setPosition(particles[i].position)
             pointManager.current.setMatrixAt(i, transform)
         }
         pointManager.current.instanceMatrix.needsUpdate = true
