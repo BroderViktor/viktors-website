@@ -1,5 +1,5 @@
 import './App.css';
-import TestPage from './pages/testPage';
+import TestPage from './pages/BackgroundGraphics';
 
 function App() {
   return (

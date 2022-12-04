@@ -4,8 +4,9 @@ import Navbar from "../components/navbar";
 import * as THREE from 'three'
 import TestObject from "../assets/test.obj";
 import Titlecard from "../assets/plane.obj";
+import { useImperativeHandle } from "react";
 
-const particlesNum = 100;
+const particlesNum = 1100;
 const speed = 1;
 
 async function loadObjData(obj, scale) {
@@ -32,6 +33,7 @@ class particle {
 
         this.position = new THREE.Vector3(0);
         this.SetPosition(octree, position, viewport, true)
+        this.originalPosition = this.position;
         this.velocity = velocity;
         this.acceleration = acceleration;
         this.targetPos = new THREE.Vector3(0);
@@ -130,24 +132,50 @@ class worldOctree {
     }
 }
 
-function PointManger() {
+class StateManager {
+    
+    constructor(particles) {
+        this.currentState = 1
+        this.particles = particles;
+    }
+
+    async loadStates() {
+        this.stateArray = [];
+        this.stateArray.push(null)
+        this.stateArray.push(await loadObjData(Titlecard, 20))
+        this.stateMods = [];
+        this.stateMods.push()
+    }
+    
+    ChangeState() {
+        if (this.stateArray[this.currentState] == null) {
+            this.particles.forEach(particle => {
+                particle.velocity = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed);
+                particle.active = false;
+            });
+        }
+        else {
+            for (let i = 0; i < this.stateArray[this.currentState].length; i++) {
+                if (this.particles[i] == undefined) break;
+                this.particles[i].targetPos = this.stateArray[this.currentState][i];
+                this.particles[i].active = true;
+            }
+        }
+
+        this.currentState = (this.currentState + 1) % this.stateArray.length
+    }
+}
+
+const PointManager = React.forwardRef((props, ref) => {
     const {viewport} = useThree();
     const pointManager = useRef();
-    const [wantedPositions, setWantedPositions] = useState(null);
+    
 
-    async function changeState() {
-        let data = await loadObjData(Titlecard, 20);
 
-        for (let i = 0; i < data.length; i++) {
-            if (particles[i] == undefined) break;
-            particles[i].targetPos = data[i];
-            particles[i].active = true;
-        }
-    }
 
     function repeatingState() {
         setTimeout(() => {
-            changeState()
+            //changeState()
             setTimeout(() => {
                 particles.forEach(particle => {
                     particle.velocity = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed);
@@ -159,31 +187,50 @@ function PointManger() {
         }, 4000);
     }
 
-    const {particles, octtree } = useMemo(() => {
+    useImperativeHandle(ref, () => ({
+        async changeState() {
+            let data = await loadObjData(Titlecard, 20);
+    
+            for (let i = 0; i < data.length; i++) {
+                if (particles[i] == undefined) break;
+                particles[i].targetPos = data[i];
+                particles[i].active = true;
+            }
+        },
+        GetStateManager() {
+            return stateManager;
+        }
+    }));
+
+
+    const {particles, octree, stateManager} = useMemo(() => {
         
-        let octtree = new worldOctree(4,4,4)
+        let octree = new worldOctree(4,4,4)
 
         let particles = new Array(particlesNum);
         for (let i = 0; i < particles.length; i++) {
             let pos = new THREE.Vector3((Math.random() - 0.5) * viewport.width, (Math.random() - 0.5) * viewport.height, 0)
             let vel = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
-            particles[i] = new particle(pos, vel, 0.05, octtree, viewport)
+            particles[i] = new particle(pos, vel, 0.05, octree, viewport)
         }
 
 
-        repeatingState();
-
-
-        return {particles, octtree}; 
+        //repeatingState();
+        let stateManager = new StateManager(particles);
+        stateManager.loadStates();
+        return {particles, octree, stateManager}; 
     }, [])
+
+    
+
     useFrame(() => {
-        //octtree.runCheck();
+        //octree.runCheck();
         for (let i = 0; i < particles.length; i++) {
             if (particles[i].active) {
                 particles[i].goToWanted()
             }
 
-            particles[i].SetPosition(octtree, particles[i].position.add(particles[i].velocity), viewport);
+            particles[i].SetPosition(octree, particles[i].position.add(particles[i].velocity), viewport);
 
             if (particles[i].position.x < -0.5 * viewport.width || particles[i].position.x > 0.5 * viewport.width) particles[i].velocity.setX(-1 * particles[i].velocity.x)
             if (particles[i].position.y < -0.5 * viewport.height || particles[i].position.y > 0.5 * viewport.height) particles[i].velocity.setY(-1 * particles[i].velocity.y)
@@ -199,23 +246,27 @@ function PointManger() {
         pointManager.current.instanceMatrix.needsUpdate = true
         pointManager.current.instanceColor.needsUpdate = true
     })
+
     return (
         <instancedMesh ref={pointManager} args={[null,null,particlesNum]}>
             <circleGeometry args={[1]}/>
             <meshStandardMaterial color={[1,1,1]}/>
         </instancedMesh>
     )
-}
+})
 
-export default function TestPage() {
+export default function Background() {
+    const PointManagerRef = useRef(null);
+
     return (
         <>
-        <div className="CanvasMainBackground">
-            <Canvas camera={{position: [0, 0, 100], zoom: 1}}>
-                <ambientLight intensity={1}/>
-                <PointManger/>
-            </Canvas>
-        </div>
+            <div className="CanvasMainBackground">
+                <Canvas camera={{position: [0, 0, 100], zoom: 1}}>
+                    <ambientLight intensity={1}/>
+                    <PointManager ref={PointManagerRef}/>
+                </Canvas>
+            </div>
+            <button onClick={() => PointManagerRef.current.GetStateManager().ChangeState()}>Change State</button>
         </>
     )
 }
