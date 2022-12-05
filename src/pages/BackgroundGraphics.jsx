@@ -3,10 +3,12 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import Navbar from "../components/navbar";
 import * as THREE from 'three'
 import TestObject from "../assets/test.obj";
-import Titlecard from "../assets/plane.obj";
+import Titlecard from "../assets/title.obj";
+import Plane from "../assets/plane.obj";
 import { useImperativeHandle } from "react";
 
-const particlesNum = 200;
+const particlesNum = 400;
+const linesNum = 200;
 const speed = 1;
 
 async function loadObjData(obj, scale) {
@@ -24,8 +26,6 @@ async function loadObjData(obj, scale) {
 }
 
 class particle {
-
-
     constructor(id, position, velocity, acceleration, octree, viewport, lineCenter) {
         this.xChunkOld = -100;
         this.yChunkOld = -100;
@@ -39,9 +39,12 @@ class particle {
         this.targetPos = new THREE.Vector3(0);
         this.active = false;
 
-        this.lineCenter = lineCenter;
-        this.line           = [];
-        this.boundParticle  = [];
+        this.lineCenter      = lineCenter;
+        this.lineConnectionsIndex = [];
+        this.boundParticles  = [];
+
+        this.lineIndex      = -1;
+        this.parentParticle = null;
     }
     goToWanted() {
         let dir = new THREE.Vector3(0);  
@@ -55,7 +58,7 @@ class particle {
         let xChunk = Math.floor((newPos.x / (viewport.width + 10)) * octree.x + octree.x/2);
         let yChunk = Math.floor((newPos.y / (viewport.height + 10)) * octree.y + octree.y/2);
         let zChunk = Math.floor((newPos.z / (viewport.height + 10)) * octree.z + octree.z/2);
-        
+        let changedChunk = false;
 
         if (xChunk < 0 || xChunk > octree.x - 1 || yChunk < 0 || yChunk > octree.y - 1 || zChunk < 0 || zChunk > octree.z - 1) { 
             if (!this.active) {
@@ -82,8 +85,10 @@ class particle {
             this.xChunkOld = xChunk;
             this.yChunkOld = yChunk;
             this.zChunkOld = zChunk;
+            changedChunk = true;
         }
         this.position = newPos;
+        return changedChunk;
     }
 }
 
@@ -146,7 +151,9 @@ class StateManager {
     async loadStates() {
         this.stateArray = [];
         this.stateArray.push(null)
-        this.stateArray.push(await loadObjData(Titlecard, 20))
+        this.stateArray.push(await loadObjData(Titlecard, 30))
+        this.stateArray.push(await loadObjData(Plane, 10))
+        this.stateArray.push(await loadObjData(TestObject, 10))
         this.stateMods = [];
         this.stateMods.push()
     }
@@ -173,6 +180,7 @@ class StateManager {
 class MeshManager {
     
     constructor(maxLines) {
+        
         this.linePositions = new Float32Array(maxLines * 3 * 4);
         this.indices = new Uint16Array(maxLines * 3 * 2);
         this.numLines = 0;
@@ -186,8 +194,10 @@ class MeshManager {
             index = this.openSpots.pop()
             usedOpenSpot = true
         }
-
-        if (index * 3 * 4 >= this.linePositions.lenght) return;
+        if ((index * 3 * 4) >= this.linePositions.length) {  
+            console.log("max cap"); 
+            return;
+        }
 
         let veca = vec1.x + vec1.y > vec2.x + vec2.y ? vec1 : vec2;
         let vecb = vec1.x + vec1.y < vec2.x + vec2.y ? vec1 : vec2;
@@ -210,22 +220,31 @@ class MeshManager {
         this.linePositions[index * 3 * 4 + 10] = vecb.y;
         this.linePositions[index * 3 * 4 + 11] = vecb.z;
 
-        this.indices[index * 3 * 2 + 0] = [index * 4 + 0];
-        this.indices[index * 3 * 2 + 1] = [index * 4 + 2];
-        this.indices[index * 3 * 2 + 2] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 0] = [index * 4 + 0];
+        this.indices[index * 3 * 4 + 1] = [index * 4 + 2];
+        this.indices[index * 3 * 4 + 2] = [index * 4 + 3];
 
-        this.indices[index * 3 * 2 + 3] = [index * 4 + 0];
-        this.indices[index * 3 * 2 + 4] = [index * 4 + 3];
-        this.indices[index * 3 * 2 + 5] = [index * 4 + 1];
+        this.indices[index * 3 * 4 + 3] = [index * 4 + 0];
+        this.indices[index * 3 * 4 + 4] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 5] = [index * 4 + 1];
+
+        this.indices[index * 3 * 4 + 6] = [index * 4 + 0];
+        this.indices[index * 3 * 4 + 7] = [index * 4 + 2];
+        this.indices[index * 3 * 4 + 8] = [index * 4 + 3];
+
+        this.indices[index * 3 * 4 + 9] = [index * 4 + 0];
+        this.indices[index * 3 * 4 + 10] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 11] = [index * 4 + 1];
         
         if (!usedOpenSpot) this.fillSpot += 1;
         
         this.numLines++;   
+
         return (index);
     }   
     updateLine(vec1, vec2, width, index) {
         
-        if (index >= this.fillSpot) return;
+        if (index >= this.fillSpot) console.log(this.fillSpot);
 
         let veca = vec1.x + vec1.y > vec2.x + vec2.y ? vec1 : vec2;
         let vecb = vec1.x + vec1.y < vec2.x + vec2.y ? vec1 : vec2;
@@ -247,14 +266,6 @@ class MeshManager {
         this.linePositions[index * 3 * 4 + 9] = vecb.x + width;
         this.linePositions[index * 3 * 4 + 10] = vecb.y;
         this.linePositions[index * 3 * 4 + 11] = vecb.z;
-
-        this.indices[index * 3 * 2 + 0] = [index * 4 + 0];
-        this.indices[index * 3 * 2 + 1] = [index * 4 + 2];
-        this.indices[index * 3 * 2 + 2] = [index * 4 + 3];
-
-        this.indices[index * 3 * 2 + 3] = [index * 4 + 0];
-        this.indices[index * 3 * 2 + 4] = [index * 4 + 3];
-        this.indices[index * 3 * 2 + 5] = [index * 4 + 1];
     }  
     removeLine(index) {
         if (index >= this.fillSpot) { console.log("fefe"); return; }
@@ -275,16 +286,25 @@ class MeshManager {
         this.linePositions[index * 3 * 4 + 9] = 0;
         this.linePositions[index * 3 * 4 + 10] = 0;
         this.linePositions[index * 3 * 4 + 11] = 0;
+        
+        this.indices[index * 3 * 4 + 0] = [0];
+        this.indices[index * 3 * 4 + 1] = [0];
+        this.indices[index * 3 * 4 + 2] = [0];
 
-        this.indices[index * 3 * 2 + 0] = 0;
-        this.indices[index * 3 * 2 + 1] = 0;
-        this.indices[index * 3 * 2 + 2] = 0;
+        this.indices[index * 3 * 4 + 3] = [0];
+        this.indices[index * 3 * 4 + 4] = [0];
+        this.indices[index * 3 * 4 + 5] = [0];
 
-        this.indices[index * 3 * 2 + 3] = 0;
-        this.indices[index * 3 * 2 + 4] = 0;
-        this.indices[index * 3 * 2 + 5] = 0;
+        this.indices[index * 3 * 4 + 6] = [0];
+        this.indices[index * 3 * 4 + 7] = [0];
+        this.indices[index * 3 * 4 + 8] = [0];
+
+        this.indices[index * 3 * 4 + 9] = [0];
+        this.indices[index * 3 * 4 + 10] = [0];
+        this.indices[index * 3 * 4 + 11] = [0];
         
         this.numLines--;
+        //console.log("removed", index)
         this.openSpots.push(index)
     } 
 }
@@ -318,86 +338,113 @@ const PointManager = React.forwardRef((props, ref) => {
                 particles[i].active = true;
             }
         },
-        GetStateManager() {
-            return stateManager;
+        ChangeState() {
+            stateManager.changeState();
         }
     }));
 
 
-    const {particles, octree, stateManager} = useMemo(() => {
+    const {particles, octree, stateManager, meshManager} = useMemo(() => {
         
-        let octree = new worldOctree(1,1,1)
+        let octree = new worldOctree(3,3,3)
 
         let particles = new Array(particlesNum);
         for (let i = 0; i < particles.length; i++) {
-            let pos = new THREE.Vector3((Math.random() - 0.5) * viewport.width, (Math.random() - 0.5) * viewport.height, 0)
-            let vel = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
-            particles[i] = new particle(i, pos, vel, 0.05, octree, viewport, Math.random() > 0.95);
+            //let pos = new THREE.Vector3((Math.random() - 0.5) * viewport.width, (Math.random() - 0.5) * viewport.height, 0)
+            let pos = new THREE.Vector3(0,0,0);
+            //let vel = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
+            let vel = i <= -1 ? new THREE.Vector3(0,0,0) : new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
+            //let vel = new THREE.Vector3(0,0,0)
+            particles[i] = new particle(i, pos, vel, 0.05, octree, viewport, i <= 10);
         }
 
 
         //repeatingState();
         let stateManager = new StateManager(particles);
         stateManager.loadStates();
-        
+        let meshManager = new MeshManager(linesNum);
 
-        return {particles, octree, stateManager}; 
+        return {particles, octree, stateManager, meshManager}; 
     }, [])
 
-    
 
     useFrame(({clock}) => {
         //octree.runCheck();
-        console.log(meshManager.numLines)
         for (let i = 0; i < particles.length; i++) {
             if (particles[i].active) {
                 particles[i].goToWanted()
             }
 
-            if (!particles[i].lineCenter) {
-                let closeParticles = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
-                /*let closestDistance = Infinity;
-                let closestParticle = null;
-                closeParticles.forEach((particle) => {
-                    if (particles[i].position == particle.position) return;
-                    
-                    let dis = particles[i].position.distanceToSquared(particle.position);
-                    if (dis < closestDistance) { 
-                        closestDistance = dis; 
-                        closestParticle = particle;
-                    }
-                })*/
+            particles[i].SetPosition(octree, particles[i].position.add(particles[i].velocity), viewport);
+            //console.log(particles[i].boundParticles.length)
 
-                closeParticles.forEach((particle) => {
-                    let repeat = particle.boundParticle.lenght > 0 ? false : true    
-                    if (!repeat) {
-                        for (let p = 0; p < particle.boundParticle.lenght; p++) {
-                            console.log(particle.boundParticle[p])
-                            if (particle.boundParticle[p] != particles[i]) repeat = true
-                        }
-                    }                
-  
-                    if (repeat == true) console.log(repeat)
+            if (particles[i].lineCenter) {
+                let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
 
+                ParticlesInChunk.forEach((chunkParticle) => {
+                    if (chunkParticle == particles[i] || chunkParticle.lineCenter || chunkParticle.parentParticle != null) return;
                     
-                    if (repeat) {
-                        particles[i].boundParticle = particle;
-                        particles[i].line.push(meshManager.addLine(particles[i].position, particle.position, 0.1));
-                        particle.boundParticle = particles[i];
-                        particle.line.push(particles[i].line[-1]);
-                    }
-                    else {
-                        meshManager.updateLine(particles[i].position, particle.position, 0.1)
-                    }
+
+                    let newLineIndex = meshManager.addLine(particles[i].position, chunkParticle.position, 0.1)
+                    
+                    particles[i].boundParticles.push(chunkParticle);
+                    chunkParticle.parentParticle = particles[i];
+
+                    particles[i].lineConnectionsIndex.push(newLineIndex);
+                    chunkParticle.lineIndex = newLineIndex;
                 })
+                
+/*              
+                let numLinesActive = 0;
+                for (let l = 0; l < meshManager.linePositions.length / 12; l++) {
+                    if (meshManager.linePositions[l * 12] != 0) numLinesActive++;
+                }
+                if (numLinesActive != meshManager.numLines) { 
+                    console.log("error! 1"); 
+                    console.log("num lines: ", meshManager.numLines); 
+                    console.log("real lines: ", numLinesActive); 
+                    
+                } else { console.log("ok! 1")}*/
+                //Update and check every particle bonded to this parent particle
+                for (let child = 0; child < particles[i].boundParticles.length; child++) {
+                    
+                    let childParticle = particles[i].boundParticles[child];
+                    
+                    let sameChunk = (particles[i].xChunkOld == childParticle.xChunkOld && particles[i].yChunkOld == childParticle.yChunkOld && particles[i].zChunkOld == childParticle.zChunkOld )
+                    
+                    //update if they are in the same chunk
+                    if (sameChunk) {
+                        //console.log("update")
+                        meshManager.updateLine(particles[i].position, childParticle.position, 0.1, childParticle.lineIndex)
+                    }
+                    //remove the connection if they are in different chunks
+                    else {
+                        childParticle.parentParticle = null;
+                        meshManager.removeLine(childParticle.lineIndex);
+                        childParticle.line = [];
 
+                        particles[i].boundParticles.splice(child, 1)
+                        particles[i].lineConnectionsIndex.splice(child, 1)
+                    }
+                }
+                /*numLinesActive = 0;
+                for (let l = 0; l < meshManager.linePositions.length / 12; l++) {
+                    if (meshManager.linePositions[l * 12] != 0) numLinesActive++;
+                }
+                if (numLinesActive != meshManager.numLines) { 
+                    console.log("error! 2"); 
+                    console.log("num lines: ", meshManager.numLines); 
+                    console.log("real lines: ", numLinesActive); 
+                    console.log(structuredClone(meshManager.linePositions));
+                    
+                } else { console.log("ok! 2")}*/
             }
 /*
             if (!particles[i].activeLine) {
-                let closeParticles = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
+                let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
                 let closestDistance = Infinity;
                 let closestParticle = null;
-                closeParticles.forEach((particle) => {
+                ParticlesInChunk.forEach((particle) => {
                     if (particles[i].position == particle.position || particle.activeLine) return;
                     
                     let dis = particles[i].position.distanceToSquared(particle.position);
@@ -430,10 +477,69 @@ const PointManager = React.forwardRef((props, ref) => {
                     particles[i].boundParticle = null;
                 }
             }*/
+            if (particles[i].position.x < -0.5 * viewport.width || particles[i].position.x > 0.5 * viewport.width) particles[i].velocity.setX(-1 * particles[i].velocity.x)
+            if (particles[i].position.y < -0.5 * viewport.height || particles[i].position.y > 0.5 * viewport.height) particles[i].velocity.setY(-1 * particles[i].velocity.y)
+            if (particles[i].position.z < -0.5 * viewport.height || particles[i].position.z > 0.5 * viewport.height) particles[i].velocity.setZ(-1 * particles[i].velocity.z)
+                
+            let col = new THREE.Color(particles[i].xChunkOld / 4, particles[i].yChunkOld / 4, particles[i].zChunkOld / 4)
+            let transform = new THREE.Matrix4()
+            transform.setPosition(particles[i].position)
+            //pointManager.current.setColorAt(i, col);
+            pointManager.current.setMatrixAt(i, transform)
             
+        }
+        meshBuffer.current.attributes.position.needsUpdate = true;
+        pointManager.current.instanceMatrix.needsUpdate = true
+        //pointManager.current.instanceColor.needsUpdate = true
+    })
+    
+    function testFrame() {
+        
+        for (let i = 0; i < particles.length; i++) {
+            
+            if (particles[i].active) {
+                particles[i].goToWanted()
+            }
 
             particles[i].SetPosition(octree, particles[i].position.add(particles[i].velocity), viewport);
 
+            if (particles[i].lineCenter) {
+                let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
+
+                ParticlesInChunk.forEach((chunkParticle) => {
+                    if (chunkParticle == particles[i] || chunkParticle.lineCenter || chunkParticle.parentParticle != null) return;
+                    
+
+                    let newLineIndex = meshManager.addLine(particles[i].position, chunkParticle.position, 0.1)
+                    
+                    particles[i].boundParticles.push(chunkParticle);
+                    chunkParticle.parentParticle = particles[i];
+
+                    particles[i].lineConnectionsIndex.push(newLineIndex);
+                    chunkParticle.lineIndex = newLineIndex;
+                })
+
+                for (let child = 0; child < particles[i].boundParticles.length; child++) {
+                    
+                    let childParticle = particles[i].boundParticles[child];
+                    
+                    let sameChunk = (particles[i].xChunkOld == childParticle.xChunkOld && particles[i].yChunkOld == childParticle.yChunkOld && particles[i].zChunkOld == childParticle.zChunkOld )
+                    //update if they are in the same chunk
+                    if (sameChunk) {
+                        meshManager.updateLine(particles[i].position, childParticle.position, 0.1, childParticle.line)
+                    }
+                    //remove the connection if they are in different chunks
+                    else {
+                        childParticle.parentParticle = null;
+                        console.log("remove", childParticle.lineIndex)
+                        meshManager.removeLine(childParticle.lineIndex);
+                        childParticle.line = [];
+
+                        particles[i].boundParticles.splice(child, 1)
+                        particles[i].lineConnectionsIndex.splice(child, 1)
+                    }
+                }
+            }
             if (particles[i].position.x < -0.5 * viewport.width || particles[i].position.x > 0.5 * viewport.width) particles[i].velocity.setX(-1 * particles[i].velocity.x)
             if (particles[i].position.y < -0.5 * viewport.height || particles[i].position.y > 0.5 * viewport.height) particles[i].velocity.setY(-1 * particles[i].velocity.y)
             if (particles[i].position.z < -0.5 * viewport.height || particles[i].position.z > 0.5 * viewport.height) particles[i].velocity.setZ(-1 * particles[i].velocity.z)
@@ -448,16 +554,16 @@ const PointManager = React.forwardRef((props, ref) => {
         meshBuffer.current.attributes.position.needsUpdate = true;
         pointManager.current.instanceMatrix.needsUpdate = true
         pointManager.current.instanceColor.needsUpdate = true
-    })
-        
-    const meshManager = new MeshManager(100);
+    }
+
+    
 
 
     return (
 <>
         <instancedMesh ref={pointManager} args={[null,null,particlesNum]}>
             <circleGeometry args={[0.8]}/>
-            <meshStandardMaterial color={[1,1,1]}/>
+            <meshStandardMaterial color={[0,0,0,0]}/>
         </instancedMesh>
         
         <mesh>
@@ -514,8 +620,7 @@ export default function Background() {
                     <PointManager ref={PointManagerRef}/>
                 </Canvas>
             </div>
-            <button onClick={() => PointManagerRef.current.GetStateManager().ChangeState()}>Change State</button>
-            <button onClick={() => window.location.reload(false)}>update State</button>
+            <button onClick={() => PointManagerRef.current.ChangeState()}>Change State</button>
         </>
     )
 }
