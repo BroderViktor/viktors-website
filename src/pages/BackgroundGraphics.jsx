@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { Children, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import Navbar from "../components/navbar";
 import * as THREE from 'three'
@@ -7,9 +7,12 @@ import Titlecard from "../assets/title.obj";
 import Plane from "../assets/plane.obj";
 import { useImperativeHandle } from "react";
 
-const particlesNum = 400;
+const particlesNum = 150;
 const linesNum = 200;
+const lineSize = 0.25;
 const speed = 1;
+const particleColor = new THREE.Color(0.3, 0.3, 0.3, 1)
+const lineColor = new THREE.Color(0.3, 0.3, 0.3, 1)
 
 async function loadObjData(obj, scale) {
     let objModel = await fetch(obj).then(r => r.text());
@@ -89,6 +92,20 @@ class particle {
         }
         this.position = newPos;
         return changedChunk;
+    }
+    make
+
+    clearLineData(meshManager) {
+        if (this.lineCenter) {
+            for (let child = 0; child < this.boundParticles.length; child++) {
+                let childParticle = this.boundParticles[child]
+
+                meshManager.removeLine(childParticle.lineIndex);
+
+                childParticle.parentParticle = null;
+                childParticle.lineIndex = -1;
+            }
+        }
     }
 }
 
@@ -183,6 +200,10 @@ class MeshManager {
         
         this.linePositions = new Float32Array(maxLines * 3 * 4);
         this.indices = new Uint16Array(maxLines * 3 * 2);
+        this.colorArray = new Float32Array(maxLines * 4 * 4)
+        for (let i = 0; i < this.colorArray.length; i++) {
+            this.colorArray[i] = Math.random();
+        }
         this.numLines = 0;
         this.openSpots = [];
         this.fillSpot = 0;
@@ -201,23 +222,32 @@ class MeshManager {
 
         let veca = vec1.x + vec1.y > vec2.x + vec2.y ? vec1 : vec2;
         let vecb = vec1.x + vec1.y < vec2.x + vec2.y ? vec1 : vec2;
- 
+
+        let xdiff = Math.abs(veca.x - vecb.x);
+        xdiff = xdiff / (xdiff + Math.abs(veca.y - vecb.y));
+
+        let ydiff = Math.abs(veca.y - vecb.y);
+        ydiff = ydiff / (ydiff + Math.abs(veca.x - vecb.x));
+
+        let xwidth = width * ydiff;   
+        let ywidth = width * xdiff;
+
         //vert 0
-        this.linePositions[index * 3 * 4 + 0] = veca.x - width;
-        this.linePositions[index * 3 * 4 + 1] = veca.y;
+        this.linePositions[index * 3 * 4 + 0] = veca.x - xwidth;
+        this.linePositions[index * 3 * 4 + 1] = veca.y + ywidth;
         this.linePositions[index * 3 * 4 + 2] = veca.z;
 
-        this.linePositions[index * 3 * 4 + 3] = veca.x + width;
-        this.linePositions[index * 3 * 4 + 4] = veca.y;
+        this.linePositions[index * 3 * 4 + 3] = veca.x + xwidth;
+        this.linePositions[index * 3 * 4 + 4] = veca.y - ywidth;
         this.linePositions[index * 3 * 4 + 5] = veca.z;
        
         //vert 1
-        this.linePositions[index * 3 * 4 + 6] = vecb.x - width;
-        this.linePositions[index * 3 * 4 + 7] = vecb.y;
+        this.linePositions[index * 3 * 4 + 6] = vecb.x - xwidth;
+        this.linePositions[index * 3 * 4 + 7] = vecb.y + ywidth;
         this.linePositions[index * 3 * 4 + 8] = vecb.z;
 
-        this.linePositions[index * 3 * 4 + 9] = vecb.x + width;
-        this.linePositions[index * 3 * 4 + 10] = vecb.y;
+        this.linePositions[index * 3 * 4 + 9] = vecb.x + xwidth;
+        this.linePositions[index * 3 * 4 + 10] = vecb.y - ywidth;
         this.linePositions[index * 3 * 4 + 11] = vecb.z;
 
         this.indices[index * 3 * 4 + 0] = [index * 4 + 0];
@@ -229,11 +259,11 @@ class MeshManager {
         this.indices[index * 3 * 4 + 5] = [index * 4 + 1];
 
         this.indices[index * 3 * 4 + 6] = [index * 4 + 0];
-        this.indices[index * 3 * 4 + 7] = [index * 4 + 2];
-        this.indices[index * 3 * 4 + 8] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 7] = [index * 4 + 1];
+        this.indices[index * 3 * 4 + 8] = [index * 4 + 2];
 
-        this.indices[index * 3 * 4 + 9] = [index * 4 + 0];
-        this.indices[index * 3 * 4 + 10] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 9] = [index * 4 + 3];
+        this.indices[index * 3 * 4 + 10] = [index * 4 + 2];
         this.indices[index * 3 * 4 + 11] = [index * 4 + 1];
         
         if (!usedOpenSpot) this.fillSpot += 1;
@@ -250,27 +280,30 @@ class MeshManager {
         let vecb = vec1.x + vec1.y < vec2.x + vec2.y ? vec1 : vec2;
 
         let xdiff = Math.abs(veca.x - vecb.x);
-        xdiff = Math.abs(veca.x - vecb.x) /  (xdiff + Math.abs(veca.y - vecb.y));
+        xdiff = xdiff / (xdiff + Math.abs(veca.y - vecb.y));
+
         let ydiff = Math.abs(veca.y - vecb.y);
-        ydiff = ydiff /  (ydiff + Math.abs(veca.x - vecb.x));
-        let xwidth = width * xdiff;   
-        let ywidth = width * ydiff;
+        ydiff = ydiff / (ydiff + Math.abs(veca.x - vecb.x));
+
+        let xwidth = width * ydiff;   
+        let ywidth = width * xdiff;
+
         //vert 0
         this.linePositions[index * 3 * 4 + 0] = veca.x + xwidth;
-        this.linePositions[index * 3 * 4 + 1] = veca.y + ywidth;
+        this.linePositions[index * 3 * 4 + 1] = veca.y - ywidth;
         this.linePositions[index * 3 * 4 + 2] = veca.z;
 
         this.linePositions[index * 3 * 4 + 3] = veca.x - xwidth;
-        this.linePositions[index * 3 * 4 + 4] = veca.y - ywidth;
+        this.linePositions[index * 3 * 4 + 4] = veca.y + ywidth;
         this.linePositions[index * 3 * 4 + 5] = veca.z;
        
         //vert 1
         this.linePositions[index * 3 * 4 + 6] = vecb.x + xwidth;
-        this.linePositions[index * 3 * 4 + 7] = vecb.y + ywidth;
+        this.linePositions[index * 3 * 4 + 7] = vecb.y - ywidth;
         this.linePositions[index * 3 * 4 + 8] = vecb.z;
 
         this.linePositions[index * 3 * 4 + 9] = vecb.x - xwidth;
-        this.linePositions[index * 3 * 4 + 10] = vecb.y - ywidth;
+        this.linePositions[index * 3 * 4 + 10] = vecb.y + ywidth;
         this.linePositions[index * 3 * 4 + 11] = vecb.z;
     }  
     removeLine(index) {
@@ -313,6 +346,11 @@ class MeshManager {
         //console.log("removed", index)
         this.openSpots.push(index)
     } 
+    removeAllLines() {
+        for (let i = 0; i < this.fillSpot; i++) {
+            this.removeLine(i);
+        }
+    }
 }
 
 const PointManager = React.forwardRef((props, ref) => {
@@ -364,7 +402,6 @@ const PointManager = React.forwardRef((props, ref) => {
             particles[i] = new particle(i, pos, vel, 0.05, octree, viewport, i % 10 == 0);
         }
 
-
         //repeatingState();
         let stateManager = new StateManager(particles);
         stateManager.loadStates();
@@ -373,77 +410,61 @@ const PointManager = React.forwardRef((props, ref) => {
         return {particles, octree, stateManager, meshManager}; 
     }, [])
 
-
     useFrame(({clock}) => {
-        //octree.runCheck();
+
         for (let i = 0; i < particles.length; i++) {
             if (particles[i].active) {
                 particles[i].goToWanted()
             }
 
             particles[i].SetPosition(octree, particles[i].position.add(particles[i].velocity), viewport);
-            //console.log(particles[i].boundParticles.length)
 
             if (particles[i].lineCenter) {
                 let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
-                /*console.log("num in chunk" + ParticlesInChunk.length)
-                console.log("num lines" + particles[i].lineConnectionsIndex.length)*/
                 ParticlesInChunk.forEach((chunkParticle) => {
-                    if (chunkParticle == particles[i] || chunkParticle.lineCenter || chunkParticle.parentParticle != null) return;
+                    if (chunkParticle == particles[i] || chunkParticle.parentParticle != null) return;
                     
+                    let newLineIndex = meshManager.addLine(particles[i].position, chunkParticle.position, lineSize)
 
-                    let newLineIndex = meshManager.addLine(particles[i].position, chunkParticle.position, 0.1)
-                    
                     particles[i].boundParticles.push(chunkParticle);
-                    chunkParticle.parentParticle = particles[i];
-
                     particles[i].lineConnectionsIndex.push(newLineIndex);
+
+                    //hvis det er line center gjør denne ingenting
                     chunkParticle.lineIndex = newLineIndex;
+                    chunkParticle.parentParticle = particles[i];
                 })
-                 
+                 /*
                 let numLinesActive = 0;
                 for (let l = 0; l < meshManager.linePositions.length / 12; l++) {
                     if (meshManager.linePositions[l * 12] != 0) numLinesActive++;
                 }
-                /*
+                
                 if (numLinesActive != ParticlesInChunk.length) { 
                     console.log("error! 1"); 
                     console.log("real lines: ", numLinesActive); 
                     
                 } else { console.log("ok! 1")}*/
+
                 //Update and check every particle bonded to this parent particle
                 for (let child = 0; child < particles[i].boundParticles.length; child++) {
                     
                     let childParticle = particles[i].boundParticles[child];
                     
                     let sameChunk = (particles[i].xChunkOld == childParticle.xChunkOld && particles[i].yChunkOld == childParticle.yChunkOld && particles[i].zChunkOld == childParticle.zChunkOld )
-                    
                     //update if they are in the same chunk
                     if (sameChunk) {
-                        //console.log("update")
-                        meshManager.updateLine(particles[i].position, childParticle.position, 0.1, childParticle.lineIndex)
+                        meshManager.updateLine(particles[i].position, childParticle.position, lineSize, particles[i].lineConnectionsIndex[child])
                     }
                     //remove the connection if they are in different chunks
                     else {
                         childParticle.parentParticle = null;
                         meshManager.removeLine(childParticle.lineIndex);
-                        childParticle.line = [];
+                        childParticle.lineIndex = -1;
 
                         particles[i].boundParticles.splice(child, 1)
                         particles[i].lineConnectionsIndex.splice(child, 1)
                     }
                 }
-                /*numLinesActive = 0;
-                for (let l = 0; l < meshManager.linePositions.length / 12; l++) {
-                    if (meshManager.linePositions[l * 12] != 0) numLinesActive++;
-                }
-                if (numLinesActive != meshManager.numLines) { 
-                    console.log("error! 2"); 
-                    console.log("num lines: ", meshManager.numLines); 
-                    console.log("real lines: ", numLinesActive); 
-                    console.log(structuredClone(meshManager.linePositions));
-                    
-                } else { console.log("ok! 2")}*/
             }
 /*
             if (!particles[i].activeLine) {
@@ -490,7 +511,7 @@ const PointManager = React.forwardRef((props, ref) => {
             let col = new THREE.Color(particles[i].xChunkOld / 4, particles[i].yChunkOld / 4, particles[i].zChunkOld / 4)
             let transform = new THREE.Matrix4()
             transform.setPosition(particles[i].position)
-            //pointManager.current.setColorAt(i, col);
+            pointManager.current.setColorAt(i, col);
             pointManager.current.setMatrixAt(i, transform)
             
         }
@@ -499,97 +520,40 @@ const PointManager = React.forwardRef((props, ref) => {
         //pointManager.current.instanceColor.needsUpdate = true
     })
     
-    function testFrame() {
-        
-        for (let i = 0; i < particles.length; i++) {
-            
-            if (particles[i].active) {
-                particles[i].goToWanted()
-            }
+    let vec1 = new THREE.Vector3(15, 50, 10)
+    let vec2 = new THREE.Vector3(1.5, -5, 10)
 
-            particles[i].SetPosition(octree, particles[i].position.add(particles[i].velocity), viewport);
-
-            if (particles[i].lineCenter) {
-                let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
-
-                ParticlesInChunk.forEach((chunkParticle) => {
-                    if (chunkParticle == particles[i] || chunkParticle.lineCenter || chunkParticle.parentParticle != null) return;
-                    
-
-                    let newLineIndex = meshManager.addLine(particles[i].position, chunkParticle.position, 0.1)
-                    
-                    particles[i].boundParticles.push(chunkParticle);
-                    chunkParticle.parentParticle = particles[i];
-
-                    particles[i].lineConnectionsIndex.push(newLineIndex);
-                    chunkParticle.lineIndex = newLineIndex;
-                })
-
-                for (let child = 0; child < particles[i].boundParticles.length; child++) {
-                    
-                    let childParticle = particles[i].boundParticles[child];
-                    
-                    let sameChunk = (particles[i].xChunkOld == childParticle.xChunkOld && particles[i].yChunkOld == childParticle.yChunkOld && particles[i].zChunkOld == childParticle.zChunkOld )
-                    //update if they are in the same chunk
-                    if (sameChunk) {
-                        meshManager.updateLine(particles[i].position, childParticle.position, 0.1, childParticle.line)
-                    }
-                    //remove the connection if they are in different chunks
-                    else {
-                        childParticle.parentParticle = null;
-                        console.log("remove", childParticle.lineIndex)
-                        meshManager.removeLine(childParticle.lineIndex);
-                        childParticle.line = [];
-
-                        particles[i].boundParticles.splice(child, 1)
-                        particles[i].lineConnectionsIndex.splice(child, 1)
-                    }
-                }
-            }
-            if (particles[i].position.x < -0.5 * viewport.width || particles[i].position.x > 0.5 * viewport.width) particles[i].velocity.setX(-1 * particles[i].velocity.x)
-            if (particles[i].position.y < -0.5 * viewport.height || particles[i].position.y > 0.5 * viewport.height) particles[i].velocity.setY(-1 * particles[i].velocity.y)
-            if (particles[i].position.z < -0.5 * viewport.height || particles[i].position.z > 0.5 * viewport.height) particles[i].velocity.setZ(-1 * particles[i].velocity.z)
-                
-            let col = new THREE.Color(particles[i].xChunkOld / 4, particles[i].yChunkOld / 4, particles[i].zChunkOld / 4)
-            let transform = new THREE.Matrix4()
-            transform.setPosition(particles[i].position)
-            pointManager.current.setColorAt(i, col);
-            pointManager.current.setMatrixAt(i, transform)
-            
-        }
-        meshBuffer.current.attributes.position.needsUpdate = true;
-        pointManager.current.instanceMatrix.needsUpdate = true
-        pointManager.current.instanceColor.needsUpdate = true
-    }
-
-    
-
+    //meshManager.addLine(vec1, vec2, 0.25)
 
     return (
 <>
-        <instancedMesh ref={pointManager} args={[null,null,particlesNum]}>
-            <circleGeometry args={[0.8]}/>
-            <meshStandardMaterial color={[0,0,0,0]}/>
-        </instancedMesh>
+
         
-        <mesh>
+        <mesh renderOrder={-1}>
             <bufferGeometry ref={meshBuffer}>
                 <bufferAttribute 
                     attach={"attributes-position"} 
                     array={meshManager.linePositions} 
-                    count={meshManager.linePositions.length / 4}
+                    count={meshManager.linePositions.length / 3}
                     itemSize={3}/>
+                <bufferAttribute 
+                    attach={"attributes-color"} 
+                    array={meshManager.colorArray} 
+                    count={meshManager.colorArray.length / 4}
+                    itemSize={4}/>
+                
                 <bufferAttribute 
                     attach={"index"} 
                     array={meshManager.indices} 
                     count={meshManager.indices.length}
                     itemSize={1}/>
-
-                <meshStandardMaterial
-                    vertexColors
-                    side={THREE.BackSide}/>
+                <meshBasicMaterial color={particleColor}/>
             </bufferGeometry>
         </mesh>
+        <instancedMesh ref={pointManager} args={[null,null,particlesNum]} renderOrder={3}>
+            <circleGeometry args={[0.8]}/>
+            <meshBasicMaterial color={particleColor}/>
+        </instancedMesh>
 </>
 
 
