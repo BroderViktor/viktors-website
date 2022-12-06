@@ -249,22 +249,28 @@ class MeshManager {
         let veca = vec1.x + vec1.y > vec2.x + vec2.y ? vec1 : vec2;
         let vecb = vec1.x + vec1.y < vec2.x + vec2.y ? vec1 : vec2;
 
+        let xdiff = Math.abs(veca.x - vecb.x);
+        xdiff = Math.abs(veca.x - vecb.x) /  (xdiff + Math.abs(veca.y - vecb.y));
+        let ydiff = Math.abs(veca.y - vecb.y);
+        ydiff = ydiff /  (ydiff + Math.abs(veca.x - vecb.x));
+        let xwidth = width * xdiff;   
+        let ywidth = width * ydiff;
         //vert 0
-        this.linePositions[index * 3 * 4 + 0] = veca.x - width;
-        this.linePositions[index * 3 * 4 + 1] = veca.y;
+        this.linePositions[index * 3 * 4 + 0] = veca.x + xwidth;
+        this.linePositions[index * 3 * 4 + 1] = veca.y + ywidth;
         this.linePositions[index * 3 * 4 + 2] = veca.z;
 
-        this.linePositions[index * 3 * 4 + 3] = veca.x + width;
-        this.linePositions[index * 3 * 4 + 4] = veca.y;
+        this.linePositions[index * 3 * 4 + 3] = veca.x - xwidth;
+        this.linePositions[index * 3 * 4 + 4] = veca.y - ywidth;
         this.linePositions[index * 3 * 4 + 5] = veca.z;
        
         //vert 1
-        this.linePositions[index * 3 * 4 + 6] = vecb.x - width;
-        this.linePositions[index * 3 * 4 + 7] = vecb.y;
+        this.linePositions[index * 3 * 4 + 6] = vecb.x + xwidth;
+        this.linePositions[index * 3 * 4 + 7] = vecb.y + ywidth;
         this.linePositions[index * 3 * 4 + 8] = vecb.z;
 
-        this.linePositions[index * 3 * 4 + 9] = vecb.x + width;
-        this.linePositions[index * 3 * 4 + 10] = vecb.y;
+        this.linePositions[index * 3 * 4 + 9] = vecb.x - xwidth;
+        this.linePositions[index * 3 * 4 + 10] = vecb.y - ywidth;
         this.linePositions[index * 3 * 4 + 11] = vecb.z;
     }  
     removeLine(index) {
@@ -355,7 +361,7 @@ const PointManager = React.forwardRef((props, ref) => {
             //let vel = new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
             let vel = i <= -1 ? new THREE.Vector3(0,0,0) : new THREE.Vector3((Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed, (Math.random() - 0.5) * speed)
             //let vel = new THREE.Vector3(0,0,0)
-            particles[i] = new particle(i, pos, vel, 0.05, octree, viewport, i <= 10);
+            particles[i] = new particle(i, pos, vel, 0.05, octree, viewport, i % 10 == 0);
         }
 
 
@@ -380,7 +386,8 @@ const PointManager = React.forwardRef((props, ref) => {
 
             if (particles[i].lineCenter) {
                 let ParticlesInChunk = octree.octree[particles[i].xChunkOld][particles[i].yChunkOld][particles[i].zChunkOld];
-
+                /*console.log("num in chunk" + ParticlesInChunk.length)
+                console.log("num lines" + particles[i].lineConnectionsIndex.length)*/
                 ParticlesInChunk.forEach((chunkParticle) => {
                     if (chunkParticle == particles[i] || chunkParticle.lineCenter || chunkParticle.parentParticle != null) return;
                     
@@ -393,15 +400,14 @@ const PointManager = React.forwardRef((props, ref) => {
                     particles[i].lineConnectionsIndex.push(newLineIndex);
                     chunkParticle.lineIndex = newLineIndex;
                 })
-                
-/*              
+                 
                 let numLinesActive = 0;
                 for (let l = 0; l < meshManager.linePositions.length / 12; l++) {
                     if (meshManager.linePositions[l * 12] != 0) numLinesActive++;
                 }
-                if (numLinesActive != meshManager.numLines) { 
+                /*
+                if (numLinesActive != ParticlesInChunk.length) { 
                     console.log("error! 1"); 
-                    console.log("num lines: ", meshManager.numLines); 
                     console.log("real lines: ", numLinesActive); 
                     
                 } else { console.log("ok! 1")}*/
