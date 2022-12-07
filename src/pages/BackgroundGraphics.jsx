@@ -10,9 +10,10 @@ import { useImperativeHandle } from "react";
 const particlesNum = 100;
 const linesNum = 200;
 const lineSize = 0.1;
+const trisNum = 10;
 const speed = 0.3;
 const particleColor = new THREE.Color(0.3, 0.3, 0.3, 1)
-const lineColor = new THREE.Color(0.3, 0.3, 0.3, 1)
+const lineColor = new THREE.Color(1, 0.0, 0.0, 1)
 
 async function loadObjData(obj, scale) {
     let objModel = await fetch(obj).then(r => r.text());
@@ -235,20 +236,20 @@ class LineMeshManager {
         //vert 0
         this.linePositions[index * 3 * 4 + 0] = veca.x - xwidth;
         this.linePositions[index * 3 * 4 + 1] = veca.y + ywidth;
-        this.linePositions[index * 3 * 4 + 2] = veca.z;
+        this.linePositions[index * 3 * 4 + 2] = veca.z - 0.001;
 
         this.linePositions[index * 3 * 4 + 3] = veca.x + xwidth;
         this.linePositions[index * 3 * 4 + 4] = veca.y - ywidth;
-        this.linePositions[index * 3 * 4 + 5] = veca.z;
+        this.linePositions[index * 3 * 4 + 5] = veca.z - 0.001;
        
         //vert 1
         this.linePositions[index * 3 * 4 + 6] = vecb.x - xwidth;
         this.linePositions[index * 3 * 4 + 7] = vecb.y + ywidth;
-        this.linePositions[index * 3 * 4 + 8] = vecb.z;
+        this.linePositions[index * 3 * 4 + 8] = vecb.z - 0.001;
 
         this.linePositions[index * 3 * 4 + 9] = vecb.x + xwidth;
         this.linePositions[index * 3 * 4 + 10] = vecb.y - ywidth;
-        this.linePositions[index * 3 * 4 + 11] = vecb.z;
+        this.linePositions[index * 3 * 4 + 11] = vecb.z - 0.001;
 
         this.indices[index * 3 * 4 + 0] = [index * 4 + 0];
         this.indices[index * 3 * 4 + 1] = [index * 4 + 2];
@@ -291,20 +292,20 @@ class LineMeshManager {
         //vert 0
         this.linePositions[index * 3 * 4 + 0] = veca.x + xwidth;
         this.linePositions[index * 3 * 4 + 1] = veca.y - ywidth;
-        this.linePositions[index * 3 * 4 + 2] = veca.z;
+        this.linePositions[index * 3 * 4 + 2] = veca.z - 0.001;
 
         this.linePositions[index * 3 * 4 + 3] = veca.x - xwidth;
         this.linePositions[index * 3 * 4 + 4] = veca.y + ywidth;
-        this.linePositions[index * 3 * 4 + 5] = veca.z;
+        this.linePositions[index * 3 * 4 + 5] = veca.z - 0.001;
        
         //vert 1
         this.linePositions[index * 3 * 4 + 6] = vecb.x + xwidth;
         this.linePositions[index * 3 * 4 + 7] = vecb.y - ywidth;
-        this.linePositions[index * 3 * 4 + 8] = vecb.z;
+        this.linePositions[index * 3 * 4 + 8] = vecb.z - 0.001;
 
         this.linePositions[index * 3 * 4 + 9] = vecb.x - xwidth;
         this.linePositions[index * 3 * 4 + 10] = vecb.y + ywidth;
-        this.linePositions[index * 3 * 4 + 11] = vecb.z;
+        this.linePositions[index * 3 * 4 + 11] = vecb.z - 0.001;
     }  
     removeLine(index) {
         if (index >= this.fillSpot) { console.log("fefe"); return; }
@@ -354,16 +355,16 @@ class LineMeshManager {
 }
 
 class triangleData {
-    constructor(p1, p2, p3) {
+    constructor(p1, p2, p3, index) {
         this.p1 = p1;
         this.p2 = p2;
         this.p3 = p3;
+        this.index = index
     } 
 }
 
 class TriangleMeshManager {
     constructor(maxTris) {
-        
         this.linePositions = new Float32Array(maxTris * 3 * 3);
         this.indices = new Uint16Array(maxTris * 3 * 2);
         this.colorArray = new Float32Array(maxTris * 4 * 3)
@@ -373,7 +374,20 @@ class TriangleMeshManager {
         this.numTris = 0;
         this.openSpots = [];
         this.fillSpot = 0;
+        this.Triangles = [];
     }
+    updateAllTriangles() {
+        for (let i = 0; i < this.Triangles.length; i++) {
+            let tri = this.Triangles[i];
+            this.updateTriangle(tri.p1.position, tri.p2.position, tri.p3.position, tri.index)
+        }
+    }
+
+    makeTriangleFromParticles(p1,p2,p3) {
+        let triIndex = this.addTriangle(p1.position, p2.position, p3.position);
+        this.Triangles.push(new triangleData(p1,p2,p3,triIndex));
+    }
+
     addTriangle(vec1, vec2, vec3) {
         let index = this.fillSpot
         let usedOpenSpot = false;
@@ -512,19 +526,14 @@ const PointManager = React.forwardRef((props, ref) => {
         let stateManager = new StateManager(particles);
         stateManager.loadStates();
         let lineManager = new LineMeshManager(linesNum);
-        let triangleManager = new TriangleMeshManager(10);
-
-        let vec1 = new THREE.Vector3(-10, 0, 10)
-        let vec2 = new THREE.Vector3(10, 0, 10)
-        let vec3 = new THREE.Vector3(10, 10, 10)
-        triangleManager.addTriangle(vec1, vec2, vec3)
+        let triangleManager = new TriangleMeshManager(trisNum);
 
         return {particles, octree, stateManager, lineManager, triangleManager}; 
     }, [])
 
     useFrame(({clock}) => {
 
-        triangleManager.updateTriangle(particles[0].position, particles[1].position, particles[2].position, 0)
+        //triangleManager.updateTriangle(particles[0].position, particles[1].position, particles[2].position, 0)
 
         for (let i = 0; i < particles.length; i++) {
             if (particles[i].active) {
@@ -599,30 +608,19 @@ const PointManager = React.forwardRef((props, ref) => {
         pointManager.current.instanceMatrix.needsUpdate = true
         //pointManager.current.instanceColor.needsUpdate = true
     })
-    const positions = new Float32Array([
-        1, 0, 0,
-        0, 1, 0,
-        -1, 0, 0,
-        0, -1, 0
-    ])
     const normals = new Float32Array([
         0, 0, 1,
         0, 0, 1,
         0, 0, 1,
-        0, 0, 1,
-    ])
-    const colors = new Float32Array([
-        0, 1, 1, 1,
-        1, 0, 1, 0.0,
-        1, 1, 0, 0.0,
-        1, 1, 1, 0.0,
-    ])
-    const indices = new Uint16Array([
-        0, 1, 3,
-        2, 3, 1,
     ])
 
-
+    const colors = new Float32Array(trisNum * 3 * 4)
+    for (let i = 0; i < colors.length; i += 4) {
+        colors[i + 0] = 0.01;
+        colors[i + 1] = 0.01;
+        colors[i + 2] = 0.01;
+        colors[i + 3] = 0.3;
+    }
 
     return (
 <>
@@ -638,14 +636,14 @@ const PointManager = React.forwardRef((props, ref) => {
                     array={lineManager.colorArray} 
                     count={lineManager.colorArray.length / 4}
                     itemSize={4}/>
-                
                 <bufferAttribute 
                     attach={"index"} 
                     array={lineManager.indices} 
                     count={lineManager.indices.length}
                     itemSize={1}/>
-                <meshBasicMaterial color={particleColor}/>
             </bufferGeometry>
+            <meshBasicMaterial color={lineColor}/>
+
         </mesh>
         <mesh renderOrder={-1}>
             <bufferGeometry ref={triangleMeshBuffer}>
@@ -659,11 +657,6 @@ const PointManager = React.forwardRef((props, ref) => {
                     array={colors}
                     count={colors.length / 4}
                     itemSize={4}/>
-                <bufferAttribute
-                    attach='attributes-normal'
-                    array={normals}
-                    count={normals.length / 3}
-                    itemSize={3}/>
                 <bufferAttribute 
                     attach={"index"} 
                     array={triangleManager.indices} 
@@ -672,9 +665,8 @@ const PointManager = React.forwardRef((props, ref) => {
 
             </bufferGeometry>
             <meshStandardMaterial 
-                    color={new THREE.Color(1,0,0,0.3)}
-                    transparent
-                    side={THREE.DoubleSide}/>
+                    vertexColors
+                    transparent={true}/>
         </mesh>
 
 {/*
@@ -714,7 +706,7 @@ const PointManager = React.forwardRef((props, ref) => {
         </mesh>
   */  }
         <instancedMesh ref={pointManager} args={[null,null,particlesNum]} renderOrder={3}>
-            <circleGeometry args={[0.8]}/>
+            <sphereGeometry args={[0.8, 6, 6]}/>
             <meshBasicMaterial color={particleColor}/>
         </instancedMesh>
 </>
